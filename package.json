@@ -1,0 +1,38 @@
+{
+  "name": "synthetix-dex-price-aggregator-uniswap-v3",
+  "private": true,
+  "version": "0.0.1",
+  "license": "GPL-2.0-or-later",
+  "engines": {
+    "node": ">=10"
+  },
+  "dependencies": {
+    "@uniswap/v3-core": "^1.0.0",
+    "@uniswap/v3-periphery": "^1.1.1"
+  },
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.0.2",
+    "@nomiclabs/hardhat-etherscan": "^2.1.4",
+    "@nomiclabs/hardhat-waffle": "^2.0.1",
+    "chai": "^4.3.4",
+    "ethereum-waffle": "^3.4.0",
+    "ethers": "^5.4.4",
+    "glob": "^7.1.7",
+    "hardhat": "^2.6.0",
+    "hardhat-local-networks-config-plugin": "^0.0.6",
+    "inquirer": "^8.1.2",
+    "mocha-chai-jest-snapshot": "^1.1.3",
+    "prettier": "^2.3.2",
+    "prettier-plugin-solidity": "*",
+    "solhint": "^3.3.6",
+    "solhint-plugin-prettier": "^0.0.5"
+  },
+  "scripts": {
+    "format": "prettier --write \"contracts/**/*.sol\" \"**/*.js\" \"**/*.md\" \"**/*.yml\" \"**/*.json\"",
+    "lint": "solhint \"contracts/*.sol\" && solhint \"contracts/test-helpers/*.sol\"",
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "test:mainnet-e2e": "hardhat test --test-type mainnet-e2e",
+    "deploy": "hardhat run scripts/deploy.js"
+  }
+}
