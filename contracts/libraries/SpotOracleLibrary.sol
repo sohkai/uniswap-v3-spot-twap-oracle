@@ -50,7 +50,7 @@ library SpotOracleLibrary {
     /// @param pool Address of Uniswap V3 pool that we want to observe
     /// @param prevSteps Number of tick observations to go backwards from current
     /// @param currentObservationIndex Current observation index
-    /// @param observationCardinality Current observation cardinality
+    /// @param observationCardinality Observation cardinality
     /// @return observedTick Previously observed tick
     function fetchPreviouslyObservedTick(
         address pool,
@@ -58,20 +58,48 @@ library SpotOracleLibrary {
         uint16 currentObservationIndex,
         uint16 observationCardinality
     ) private view returns (int24 observedTick) {
-        require(observationCardinality > (prevSteps + 1), 'BC'); // must have cardinality at least n+1 to observe up to t-n
-        uint16 targetIndex = prevObservationIndex(prevSteps, currentObservationIndex, observationCardinality);
-        uint16 targetMinusOneIndex = prevObservationIndex(prevSteps + 1, currentObservationIndex, observationCardinality);
+        // Fetch prior target observation (target) and the one before it (target-1)
+        (uint32 targetTimestamp, int56 targetTickCumulative, uint16 targetIndex) =
+            fetchPriorObservation(pool, prevSteps, currentObservationIndex, observationCardinality);
+        (uint32 targetMinusOneTimestamp, int56 targetMinusOneTickCumulative, uint targetMinusOneIndex) =
+            fetchPriorObservation(pool, 1, targetIndex, observationCardinality);
+        require(targetMinusOneIndex != currentObservationIndex, 'BC'); // not enough cardinality for target-1
 
         // "Untransform" target and target-1 into the target's tick value
         // Assume these two observations were made within a uint32 second time window (~136 years)
-        (uint32 targetTimestamp, int56 targetTickCumulative, , ) = IUniswapV3Pool(pool).observations(targetIndex);
-        (uint32 targetMinusOneTimestamp, int56 targetMinusOneTickCumulative, , ) = IUniswapV3Pool(pool).observations(targetMinusOneIndex);
         uint32 timeDelta = targetTimestamp - targetMinusOneTimestamp; // underflow is desired
         int56 tickDelta = targetTickCumulative - targetMinusOneTickCumulative;
 
         observedTick = int24(tickDelta / timeDelta);
         // Always round observed tick to negative infinity
         if (tickDelta < 0 && (tickDelta % timeDelta != 0)) observedTick--;
+    }
+
+    /// @dev Fetch a prior observation `prevSteps` before a starting index.
+    ///      Handles cardinality wrapping and uninitialized observations after cardinality growth.
+    /// @param pool Address of Uniswap V3 pool that we want to observe
+    /// @param prevSteps Number of tick observations to go backwards from starting
+    /// @param startingObservationIndex Observation index to start from
+    /// @param observationCardinality Observation cardinality
+    /// @return timestamp Prior observation's timestamp
+    /// @return tickCumulative Prior observation's tick cumulative value
+    /// @return observationIndex Prior observation's index
+    function fetchPriorObservation(
+        address pool,
+        uint16 prevSteps,
+        uint16 startingObservationIndex,
+        uint16 observationCardinality
+    ) private view returns (uint32 timestamp, int56 tickCumulative, uint16 observationIndex) {
+        bool initialized;
+        for(; !initialized && prevSteps < observationCardinality; ++prevSteps) {
+            // This loop handles a specific case when the pool's cardinality has increased but has
+            // not yet observed enough new trades to fill out the new indices.
+            // If we loop back from 0 to the last index, we will find uninitialized observations and
+            // will have to keep looking back.
+            observationIndex = prevObservationIndex(prevSteps, startingObservationIndex, observationCardinality);
+            (timestamp, tickCumulative, , initialized) = IUniswapV3Pool(pool).observations(observationIndex);
+        }
+        require(initialized, 'BO'); // ensure found observation is initialized and within cardinality
     }
 
     /// @dev Returns whether given timestamp (truncated to 32 bits) is before current block timestamp.
@@ -86,18 +114,18 @@ library SpotOracleLibrary {
         return beforeOrNow != uint32(block.timestamp); // truncation is desired
     }
 
-    /// @dev Returns the index of a past observation `prevSteps` before the current index.
+    /// @dev Calculate the index of a past observation `prevSteps` before a starting index.
     ///      Handles cardinality wrapping.
     ///      `prevSteps` _must_ be lte `cardinality`.
-    /// @param prevSteps Number of indices to go backwards from current
-    /// @param current Current observation index
-    /// @param cardinality Current observation cardinality
+    /// @param prevSteps Number of indices to go backwards from starting
+    /// @param starting Index to start from
+    /// @param cardinality Observation cardinality
     /// @return uint16 Index of past observation
-    function prevObservationIndex(uint16 prevSteps, uint16 current, uint16 cardinality) private pure returns (uint16) {
-        if (current < prevSteps) {
-            return cardinality - prevSteps + current;
+    function prevObservationIndex(uint16 prevSteps, uint16 starting, uint16 cardinality) private pure returns (uint16) {
+        if (starting < prevSteps) {
+            return cardinality - prevSteps + starting;
         } else {
-            return current - prevSteps;
+            return starting - prevSteps;
         }
     }
 }
