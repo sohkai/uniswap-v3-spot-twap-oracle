@@ -2,6 +2,8 @@ require('@nomiclabs/hardhat-waffle')
 require('@nomiclabs/hardhat-etherscan')
 require('hardhat-local-networks-config-plugin')
 
+require('./hardhat/test')
+
 module.exports = {
   solidity: {
     version: '0.7.6',
