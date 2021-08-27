@@ -11,7 +11,7 @@ import '@uniswap/v3-periphery/contracts/libraries/PoolAddress.sol';
 /// @notice Provides functions to integrate with a V3 pool's "safe" spot price
 library SpotOracleLibrary {
     /// @notice Fetches spot tick using Uniswap V3 oracle
-    /// @param pool Address of Uniswap V3 pool that we want to observe
+    /// @param pool Address of Uniswap V3 pool to observe
     /// @return spotTick The spot tick, which is either the prior trading block's first observed or ending tick
     function consult(address pool) internal view returns (int24 spotTick) {
         (, int24 currentTick, uint16 currentObservationIndex, uint16 observationCardinality, , , ) = IUniswapV3Pool(pool).slot0();
@@ -36,7 +36,7 @@ library SpotOracleLibrary {
     }
 
     /// @notice Fetches a previously observed tick from a Uniswap V3 oracle
-    /// @param pool Address of Uniswap V3 pool that we want to observe
+    /// @param pool Address of Uniswap V3 pool to observe
     /// @param prevSteps Number of tick observations to go backwards from last
     /// @return observedTick Previously observed tick
     function consultPreviouslyObservedTick(address pool, uint16 prevSteps) internal view returns (int24 observedTick) {
@@ -44,10 +44,22 @@ library SpotOracleLibrary {
         return fetchPreviouslyObservedTick(pool, prevSteps, currentObservationIndex, observationCardinality);
     }
 
+    /// @dev Returns whether given timestamp (truncated to 32 bits) is before current block timestamp.
+    ///      Safe in comparisons across uint32 overflow boundaries.
+    ///      `beforeOrNow` _must_ originally have been within one uint32 time period chronologically
+    ///      before or equal to `block.timestamp`.
+    /// @param beforeOrNow A timestamp chronologically before or equal to the current block timestamp
+    /// @return bool Whether `beforeOrNow` is chronologically < block.timestamp
+    function beforeNow(uint32 beforeOrNow) private view returns (bool) {
+        // If `beforeOrNow` was within one uint32 period to `block.timestamp` then a lower value is
+        // naturally an earlier time and a higher value is also an earlier time, only pre-overflow
+        return beforeOrNow != uint32(block.timestamp); // truncation is desired
+    }
+
     /// @dev Fetch a previously observed tick.
     ///      This tick _may not_ be the same as the ending tick of a block (ie. reading pool.slot0()'s currentTick)
     ///      as observations are only written to once per block, during the pool's first trade or liquidity change.
-    /// @param pool Address of Uniswap V3 pool that we want to observe
+    /// @param pool Address of Uniswap V3 pool to observe
     /// @param prevSteps Number of tick observations to go backwards from current
     /// @param currentObservationIndex Current observation index
     /// @param observationCardinality Observation cardinality
@@ -77,7 +89,7 @@ library SpotOracleLibrary {
 
     /// @dev Fetch a prior observation `prevSteps` before a starting index.
     ///      Handles cardinality wrapping and uninitialized observations after cardinality growth.
-    /// @param pool Address of Uniswap V3 pool that we want to observe
+    /// @param pool Address of Uniswap V3 pool to observe
     /// @param prevSteps Number of tick observations to go backwards from starting
     /// @param startingObservationIndex Observation index to start from
     /// @param observationCardinality Observation cardinality
@@ -100,18 +112,6 @@ library SpotOracleLibrary {
             (timestamp, tickCumulative, , initialized) = IUniswapV3Pool(pool).observations(observationIndex);
         }
         require(initialized, 'BO'); // ensure found observation is initialized and within cardinality
-    }
-
-    /// @dev Returns whether given timestamp (truncated to 32 bits) is before current block timestamp.
-    ///      Safe in comparisons across uint32 overflow boundaries.
-    ///      `beforeOrNow` _must_ originally have been within one uint32 time period chronologically
-    ///      before or equal to `block.timestamp`.
-    /// @param beforeOrNow A timestamp chronologically before or equal to the current block timestamp
-    /// @return bool Whether `beforeOrNow` is chronologically < block.timestamp
-    function beforeNow(uint32 beforeOrNow) private view returns (bool) {
-        // If `beforeOrNow` was within one uint32 period to `block.timestamp` then a lower value is
-        // naturally an earlier time and a higher value is also an earlier time, only pre-overflow
-        return beforeOrNow != uint32(block.timestamp); // truncation is desired
     }
 
     /// @dev Calculate the index of a past observation `prevSteps` before a starting index.
