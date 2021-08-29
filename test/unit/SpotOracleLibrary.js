@@ -7,22 +7,27 @@ const { ethers } = hre
 
 describe('OracleSpotLibrary', () => {
   let tokenA, tokenB
-  let oracle
   let poolFactory
+  let oracle
+  let pool
 
   const timer = new Timer(hre)
 
-  async function setupPool({ cardinality, observationIndex, observations }) {
-    pool = await poolFactory.deploy(tokenA, tokenB, cardinality)
-    await pool.setSlot0(0, observationIndex)
+  async function setupPool({ cardinality, matchTime, observationIndex, observations, slot0Tick = 0 }) {
+    const pool = await poolFactory.deploy(tokenA, tokenB, cardinality)
+    await pool.setSlot0(slot0Tick, observationIndex)
 
     const now = await timer.now()
     const observationTimes = observations.map(([timeDelta]) => now.add(timeDelta))
     const observationTicks = observations.map(([_, cumulativeTick]) => cumulativeTick)
     await pool.setObservations(observationTimes, observationTicks)
 
-    // Bring the EVM time to match current observation
-    await timer.setTime(observationTimes[observationIndex])
+    if (matchTime) {
+      // Bring the EVM time to match current observation
+      await timer.setTime(observationTimes[observationIndex])
+    }
+
+    return pool
   }
 
   beforeEach('setup mocks', async () => {
@@ -39,14 +44,21 @@ describe('OracleSpotLibrary', () => {
   context('#consult', () => {
     context('when current observation is before now', () => {
       const slot0Tick = 8888
+      const cardinality = 1
+      const observationIndex = 0
 
       beforeEach('setup pool', async () => {
-        pool = await poolFactory.deploy(tokenA, tokenB, 1)
-        await pool.setSlot0(slot0Tick, 0)
-        await pool.setObservations(
-          [(await timer.now()).sub(toBn('100'))], // prior to now
-          [0] // cumulative tick, unused
-        )
+        pool = await setupPool({
+          cardinality,
+          observationIndex,
+          observations: [
+            [
+              (await timer.now()).sub(toBn('100')), // prior to now
+              0, // cumulative tick, unused
+            ],
+          ],
+          slot0Tick,
+        })
       })
 
       it('reads correct spot tick', async () => {
@@ -61,12 +73,17 @@ describe('OracleSpotLibrary', () => {
       const observationIndex = 0
 
       beforeEach('setup pool', async () => {
-        pool = await poolFactory.deploy(tokenA, tokenB, cardinality)
-        await pool.setSlot0(slot0Tick, observationIndex)
-        await pool.setObservations(
-          [(await timer.now()).add(toBn('100'))], // prior to now and prior to time truncation
-          [0] // cumulative tick, unused
-        )
+        pool = await setupPool({
+          cardinality,
+          observationIndex,
+          observations: [
+            [
+              (await timer.now()).add(toBn('100')), // prior to now and prior to time truncation
+              0, // cumulative tick, unused
+            ],
+          ],
+          slot0Tick,
+        })
       })
 
       it('reads correct spot tick', async () => {
@@ -81,9 +98,10 @@ describe('OracleSpotLibrary', () => {
         const observationIndex = 2
 
         beforeEach('setup pool', async () => {
-          await setupPool({
+          pool = await setupPool({
             cardinality,
             observationIndex,
+            matchTime: true,
             observations: [
               [toBn('100'), toBn('5000')], // prior-1 observation
               [toBn('200'), toBn('6000')], // prior observation
@@ -108,9 +126,10 @@ describe('OracleSpotLibrary', () => {
         const observationIndex = 2
 
         beforeEach('setup pool', async () => {
-          await setupPool({
+          pool = await setupPool({
             cardinality,
             observationIndex,
+            matchTime: true,
             observations: [
               [toBn('134'), toBn('5133')], // prior-1 observation
               [toBn('200'), toBn('6000')], // prior observation
@@ -136,9 +155,10 @@ describe('OracleSpotLibrary', () => {
         const observationIndex = 2
 
         beforeEach('setup pool', async () => {
-          await setupPool({
+          pool = await setupPool({
             cardinality,
             observationIndex,
+            matchTime: true,
             observations: [
               [toBn('134'), toBn('-5133')], // prior-1 observation
               [toBn('200'), toBn('-6000')], // prior observation
@@ -164,9 +184,10 @@ describe('OracleSpotLibrary', () => {
         const observationIndex = 0
 
         beforeEach('setup pool', async () => {
-          await setupPool({
+          pool = await setupPool({
             cardinality,
             observationIndex,
+            matchTime: true,
             observations: [
               [toBn('201'), 0], // current observation (tick unused)
               [toBn('31'), toBn('4269')], // prior-1 observation
@@ -192,9 +213,10 @@ describe('OracleSpotLibrary', () => {
         const observationIndex = 0
 
         beforeEach('setup pool', async () => {
-          await setupPool({
+          pool = await setupPool({
             cardinality,
             observationIndex,
+            matchTime: true,
             observations: [
               [toBn('201'), 0], // current observation (tick unused)
               [toBn('42'), toBn('1337')], // prior-1 observation
@@ -221,9 +243,10 @@ describe('OracleSpotLibrary', () => {
         const observationIndex = 1
 
         beforeEach('setup pool', async () => {
-          await setupPool({
+          pool = await setupPool({
             cardinality,
             observationIndex,
+            matchTime: true,
             observations: [
               [toBn('314'), toBn('117110105')], // prior observation
               [toBn('201'), 0], // current observation (tick unused)
@@ -250,9 +273,10 @@ describe('OracleSpotLibrary', () => {
         const observationIndex = 0
 
         beforeEach('setup pool', async () => {
-          await setupPool({
+          pool = await setupPool({
             cardinality,
             observationIndex,
+            matchTime: true,
             observations: [
               [toBn('100'), 0], // current observation (tick unused)
             ],
@@ -269,9 +293,10 @@ describe('OracleSpotLibrary', () => {
         const observationIndex = 1
 
         beforeEach('setup pool', async () => {
-          await setupPool({
+          pool = await setupPool({
             cardinality,
             observationIndex,
+            matchTime: true,
             observations: [
               [toBn('100'), toBn('5000')], // prior observation
               [toBn('101'), 0], // current observation (tick unused)
@@ -289,9 +314,10 @@ describe('OracleSpotLibrary', () => {
         const observationIndex = 1
 
         beforeEach('setup pool', async () => {
-          await setupPool({
+          pool = await setupPool({
             cardinality,
             observationIndex,
+            matchTime: true,
             observations: [
               [toBn('100'), toBn('5000')], // prior observation
               [toBn('101'), 0], // current observation (tick unused)
@@ -313,9 +339,10 @@ describe('OracleSpotLibrary', () => {
       const observationIndex = 2
 
       beforeEach('setup pool', async () => {
-        await setupPool({
+        pool = await setupPool({
           cardinality,
           observationIndex,
+          matchTime: true,
           observations: [
             [toBn('-100'), toBn('1000')], // prior-1 observation
             [toBn('100'), toBn('5000')], // prior observation
@@ -360,7 +387,7 @@ describe('OracleSpotLibrary', () => {
       const observationIndex = 2
 
       beforeEach('setup pool', async () => {
-        await setupPool({
+        pool = await setupPool({
           cardinality,
           observationIndex,
           observations: [
@@ -400,7 +427,7 @@ describe('OracleSpotLibrary', () => {
       const observationIndex = 0
 
       beforeEach('setup pool', async () => {
-        await setupPool({
+        pool = await setupPool({
           cardinality,
           observationIndex,
           observations: [
