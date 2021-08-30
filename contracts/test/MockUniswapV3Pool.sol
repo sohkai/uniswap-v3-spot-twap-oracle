@@ -150,7 +150,7 @@ contract MockUniswapV3Pool {
         uint16 currentObsIndex = _slot0.observationIndex;
         uint16 currentObsCardinality = _slot0.observationCardinality;
 
-        for (uint16 ii; ii < _observations.length; ++ii) {
+        for (uint16 ii; ii < currentObsCardinality; ++ii) {
             uint16 obsIndex = _prevObservationIndex(ii, currentObsIndex, currentObsCardinality);
             Observation memory obs = _observations[obsIndex];
 
@@ -163,6 +163,10 @@ contract MockUniswapV3Pool {
                     // We avoid using slot0 because it's set separately, instead adjusting based on
                     // historical observations' tick cumulatives
                     uint16 priorIndex = _prevObservationIndex(1, currentObsIndex, currentObsCardinality);
+                    require(
+                        priorIndex != currentObsIndex,
+                        'MockUniswapV3Pool#_calculateTickCumulative needed more historical observations'
+                    );
                     Observation memory priorObs = _observations[priorIndex];
 
                     int24 tick = _calculateTickValueFromObservations(obs, priorObs);

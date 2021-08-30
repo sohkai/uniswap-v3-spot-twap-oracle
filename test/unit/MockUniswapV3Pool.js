@@ -6,7 +6,7 @@ const { toBn } = require('../math')
 const { ethers } = hre
 
 describe('MockUniswapV3Pool', () => {
-  let tokenA, tokenB
+  let tokenA, tokenB, poolFactory
   let pool
   const observationCardinality = toBn('3')
 
@@ -17,7 +17,7 @@ describe('MockUniswapV3Pool', () => {
     tokenA = accounts[1].address
     tokenB = accounts[2].address
 
-    const poolFactory = await ethers.getContractFactory('MockUniswapV3Pool')
+    poolFactory = await ethers.getContractFactory('MockUniswapV3Pool')
     pool = await poolFactory.deploy(tokenA, tokenB, observationCardinality)
   })
 
@@ -178,6 +178,40 @@ describe('MockUniswapV3Pool', () => {
       await expect(pool.observe([oneMinute, oneMinute, oneMinute])).to.be.revertedWith(
         'MockUniswapV3Pool#observe called with invalid array length (must be 2)'
       )
+    })
+
+    context('without enough historical observations', async () => {
+      context('with only one observation', async () => {
+        const observationCardinality = 1
+
+        beforeEach('setup mocks', async () => {
+          const now = await timer.now()
+          pool = await poolFactory.deploy(tokenA, tokenB, observationCardinality)
+          await pool.setObservations([now.sub('100')], [toBn('5000')])
+        })
+
+        it('cannot observe', async () => {
+          await expect(pool.observe([0, 60])).to.be.revertedWith(
+            'MockUniswapV3Pool#_calculateTickCumulative needed more historical observations'
+          )
+        })
+      })
+
+      context('without older observations', async () => {
+        beforeEach('setup mocks', async () => {
+          chainTimeIncrease = toBn('200') // match current observation
+          await setupMocks(chainTimeIncrease)
+        })
+
+        it('cannot observe past history', async () => {
+          await expect(
+            pool.observe([
+              0,
+              350, // past oldest observation
+            ])
+          ).to.be.revertedWith('MockUniswapV3Pool#_calculateTickCumulative could not find matching observation')
+        })
+      })
     })
 
     context('with exactly matching times', () => {
