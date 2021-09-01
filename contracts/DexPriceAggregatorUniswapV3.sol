@@ -193,7 +193,15 @@ contract DexPriceAggregatorUniswapV3 is IDexPriceAggregator, Owned {
         int256 twapTick = OracleLibrary.consult(_pool, SafeCast.toUint32(_twapPeriod));
 
         // Return min amount between spot price and twap
-        int256 minTick = spotTick < twapTick ? spotTick : twapTick;
+        // Ticks are based on the ratio between token0:token1 so if the input token is token1 then
+        // we need to treat the tick as an inverse
+        int256 minTick;
+        if (_tokenIn < _tokenOut) {
+            minTick = spotTick < twapTick ? spotTick : twapTick;
+        } else {
+            minTick = spotTick > twapTick ? spotTick : twapTick;
+        }
+
         return
             OracleLibrary.getQuoteAtTick(
                 int24(minTick), // can assume safe being result from consult()
