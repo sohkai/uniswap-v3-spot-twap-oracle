@@ -80,14 +80,14 @@ describe('DexPriceAggregatorUniswapV3', () => {
           .withArgs(token0.address, token1.address, poolOverride.address)
       })
 
-      it('fails to set pool with non-matching tokens for route', async () => {
+      it('cannot set pool with non-matching tokens for route', async () => {
         const invalidPool = await poolFactory.deploy(token0.address, tokenZ.address, 0)
         await expect(
           oracle.connect(owner).setPoolForRoute(token0.address, token1.address, invalidPool.address)
         ).to.be.revertedWith('Tokens or pool not correct')
       })
 
-      it('fails to set pool if calling as non-owner', async () => {
+      it('cannot set pool if calling as non-owner', async () => {
         await expect(oracle.setPoolForRoute(token0.address, token1.address, poolOverride.address)).to.be.revertedWith(
           'Only the contract owner may perform this action'
         )
@@ -164,6 +164,14 @@ describe('DexPriceAggregatorUniswapV3', () => {
       // See https://www.wolframalpha.com/input/?i=1.0001%5E-100
       // 0.9900503287412094817103488094315301300297482178915619517176393374 * 1e18
       tickConversionRatios.minusOneHundred = await oracle.getQuoteAtTick(...baseQuoteAtTickArgs, '-100')
+      // 985112678388042486; close to 985112678388042500
+      // See https://www.wolframalpha.com/input/?i=1.0001%5E-150
+      // 0.9851126783880424865309649427654647904769999405977165468499548697 * 1e18
+      tickConversionRatios.minusOneHundredFifty = await oracle.getQuoteAtTick(...baseQuoteAtTickArgs, '-150')
+      // 970446989120862830; close to 970446989120862800
+      // See https://www.wolframalpha.com/input/?i=1.0001%5E-300
+      // 0.9704469891208628303191725807367416003440537327063766025905847184 * 1e18
+      tickConversionRatios.minusThreeHundred = await oracle.getQuoteAtTick(...baseQuoteAtTickArgs, '-300')
     })
 
     beforeEach('setup pools', async () => {
@@ -212,121 +220,291 @@ describe('DexPriceAggregatorUniswapV3', () => {
       })
     })
 
-    context('assetToAsset', () => {
+    context('asset to asset', () => {
       // Anticipate some loss of precision when "crossing" due to the separate calculations
       const accuracyBuffer = toBn('1')
 
-      context('spot < twap', async () => {
-        let pool1, pool2
-        const pool1Slot0Tick = toBn('10')
-        const pool2Slot0Tick = toBn('40')
+      context('token0 -> token1', () => {
+        // token0 -> token1 is in normal tick direction (e.g. higher tick -> higher output)
+        context('spot < twap', () => {
+          let pool1, pool2
+          const pool1Slot0Tick = toBn('10')
+          const pool2Slot0Tick = toBn('40')
 
-        beforeEach('set pool overrides', async () => {
-          pool1 = pool1Pos
-          pool2 = pool2Pos
-          // By default the oracle will use the factory-derived pool address,
-          // so we override it to use the mock pools for the routes
-          await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
-          await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          beforeEach('set pool overrides', async () => {
+            pool1 = pool1Pos
+            pool2 = pool2Pos
+            // By default the oracle will use the factory-derived pool address,
+            // so we override it to use the mock pools for the routes
+            await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
+            await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          })
+
+          beforeEach('set spot ticks', async () => {
+            await pool1.setSlot0(pool1Slot0Tick, observationIndex)
+            await pool2.setSlot0(pool2Slot0Tick, observationIndex)
+          })
+
+          it('selects spot', async () => {
+            const readAmountOut = await oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)
+            expect(readAmountOut).to.be.closeTo(tickConversionRatios.fifty, accuracyBuffer)
+          })
         })
 
-        beforeEach('set spot ticks', async () => {
-          await pool1.setSlot0(pool1Slot0Tick, observationIndex)
-          await pool2.setSlot0(pool2Slot0Tick, observationIndex)
+        context('spot > twap', () => {
+          let pool1, pool2
+          const pool1Slot0Tick = toBn('100')
+          const pool2Slot0Tick = toBn('200')
+
+          beforeEach('set pool overrides', async () => {
+            pool1 = pool1Pos
+            pool2 = pool2Pos
+            // By default the oracle will use the factory-derived pool address,
+            // so we override it to use the mock pools for the routes
+            await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
+            await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          })
+
+          beforeEach('set spot ticks', async () => {
+            await pool1.setSlot0(pool1Slot0Tick, observationIndex)
+            await pool2.setSlot0(pool2Slot0Tick, observationIndex)
+          })
+
+          it('selects twap', async () => {
+            const readAmountOut = await oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)
+            expect(readAmountOut).to.be.closeTo(tickConversionRatios.oneHundredFifty, accuracyBuffer)
+          })
         })
 
-        it('selects spot', async () => {
-          const readAmountOut = await oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)
-          expect(readAmountOut).to.be.closeTo(tickConversionRatios.fifty, accuracyBuffer)
+        context('mixed spot < twap', () => {
+          let pool1, pool2
+          const pool1Slot0Tick = toBn('70')
+          const pool2Slot0Tick = toBn('30')
+
+          // cross pool spot = 70 + 30 = 100
+          // cross pool twap = 50 + 100 = 150
+
+          beforeEach('set pool overrides', async () => {
+            pool1 = pool1Pos
+            pool2 = pool2Pos
+            // By default the oracle will use the factory-derived pool address,
+            // so we override it to use the mock pools for the routes
+            await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
+            await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          })
+
+          beforeEach('set spot ticks', async () => {
+            await pool1.setSlot0(pool1Slot0Tick, observationIndex)
+            await pool2.setSlot0(pool2Slot0Tick, observationIndex)
+          })
+
+          it('selects twap', async () => {
+            const readAmountOut = await oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)
+            expect(readAmountOut).to.be.closeTo(tickConversionRatios.oneHundred, accuracyBuffer)
+          })
+        })
+
+        context('mixed spot > twap', () => {
+          let pool1, pool2
+          const pool1Slot0Tick = toBn('20')
+          const pool2Slot0Tick = toBn('300')
+
+          // cross pool spot = 20 + 300 = 320
+          // cross pool twap = 50 + 100 = 150
+
+          beforeEach('set pool overrides', async () => {
+            pool1 = pool1Pos
+            pool2 = pool2Pos
+            // By default the oracle will use the factory-derived pool address,
+            // so we override it to use the mock pools for the routes
+            await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
+            await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          })
+
+          beforeEach('set spot ticks', async () => {
+            await pool1.setSlot0(pool1Slot0Tick, observationIndex)
+            await pool2.setSlot0(pool2Slot0Tick, observationIndex)
+          })
+
+          it('selects twap', async () => {
+            const readAmountOut = await oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)
+            expect(readAmountOut).to.be.closeTo(tickConversionRatios.oneHundredFifty, accuracyBuffer)
+          })
         })
       })
 
-      context('spot > twap', async () => {
-        let pool1, pool2
-        const pool1Slot0Tick = toBn('100')
-        const pool2Slot0Tick = toBn('200')
+      context('token1 -> token2', () => {
+        // token0 -> token1 is in inverted tick direction (e.g. higher tick -> lower output)
+        context('spot < twap', () => {
+          let pool1, pool2
+          const pool1Slot0Tick = toBn('10')
+          const pool2Slot0Tick = toBn('40')
 
-        beforeEach('set pool overrides', async () => {
-          pool1 = pool1Pos
-          pool2 = pool2Pos
-          // By default the oracle will use the factory-derived pool address,
-          // so we override it to use the mock pools for the routes
-          await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
-          await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          beforeEach('set pool overrides', async () => {
+            pool1 = pool1Pos
+            pool2 = pool2Pos
+            // By default the oracle will use the factory-derived pool address,
+            // so we override it to use the mock pools for the routes
+            await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
+            await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          })
+
+          beforeEach('set spot ticks', async () => {
+            await pool1.setSlot0(pool1Slot0Tick, observationIndex)
+            await pool2.setSlot0(pool2Slot0Tick, observationIndex)
+          })
+
+          it('selects twap', async () => {
+            const readAmountOut = await oracle.assetToAsset(token1.address, amountIn, token0.address, twapPeriod)
+            expect(readAmountOut).to.be.closeTo(tickConversionRatios.minusOneHundredFifty, accuracyBuffer)
+          })
         })
 
-        beforeEach('set spot ticks', async () => {
-          await pool1.setSlot0(pool1Slot0Tick, observationIndex)
-          await pool2.setSlot0(pool2Slot0Tick, observationIndex)
+        context('spot > twap', () => {
+          let pool1, pool2
+          const pool1Slot0Tick = toBn('100')
+          const pool2Slot0Tick = toBn('200')
+
+          beforeEach('set pool overrides', async () => {
+            pool1 = pool1Pos
+            pool2 = pool2Pos
+            // By default the oracle will use the factory-derived pool address,
+            // so we override it to use the mock pools for the routes
+            await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
+            await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          })
+
+          beforeEach('set spot ticks', async () => {
+            await pool1.setSlot0(pool1Slot0Tick, observationIndex)
+            await pool2.setSlot0(pool2Slot0Tick, observationIndex)
+          })
+
+          it('selects spot', async () => {
+            const readAmountOut = await oracle.assetToAsset(token1.address, amountIn, token0.address, twapPeriod)
+            expect(readAmountOut).to.be.closeTo(tickConversionRatios.minusThreeHundred, accuracyBuffer)
+          })
         })
 
-        it('selects twap', async () => {
-          const readAmountOut = await oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)
-          expect(readAmountOut).to.be.closeTo(tickConversionRatios.oneHundredFifty, accuracyBuffer)
+        context('mixed spot < twap', () => {
+          let pool1, pool2
+          const pool1Slot0Tick = toBn('70')
+          const pool2Slot0Tick = toBn('30')
+
+          // cross pool spot = 70 + 30 = 100
+          // cross pool twap = 50 + 100 = 150
+
+          beforeEach('set pool overrides', async () => {
+            pool1 = pool1Pos
+            pool2 = pool2Pos
+            // By default the oracle will use the factory-derived pool address,
+            // so we override it to use the mock pools for the routes
+            await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
+            await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          })
+
+          beforeEach('set spot ticks', async () => {
+            await pool1.setSlot0(pool1Slot0Tick, observationIndex)
+            await pool2.setSlot0(pool2Slot0Tick, observationIndex)
+          })
+
+          it('selects twap', async () => {
+            const readAmountOut = await oracle.assetToAsset(token1.address, amountIn, token0.address, twapPeriod)
+            expect(readAmountOut).to.be.closeTo(tickConversionRatios.minusOneHundredFifty, accuracyBuffer)
+          })
+        })
+
+        context('mixed spot > twap', () => {
+          let pool1, pool2
+          const pool1Slot0Tick = toBn('30')
+          const pool2Slot0Tick = toBn('270')
+
+          // cross pool spot = 30 + 270 = 300
+          // cross pool twap = 50 + 100 = 150
+
+          beforeEach('set pool overrides', async () => {
+            pool1 = pool1Pos
+            pool2 = pool2Pos
+            // By default the oracle will use the factory-derived pool address,
+            // so we override it to use the mock pools for the routes
+            await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
+            await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          })
+
+          beforeEach('set spot ticks', async () => {
+            await pool1.setSlot0(pool1Slot0Tick, observationIndex)
+            await pool2.setSlot0(pool2Slot0Tick, observationIndex)
+          })
+
+          it('selects twap', async () => {
+            const readAmountOut = await oracle.assetToAsset(token1.address, amountIn, token0.address, twapPeriod)
+            expect(readAmountOut).to.be.closeTo(tickConversionRatios.minusThreeHundred, accuracyBuffer)
+          })
         })
       })
 
-      context('mixed spot < twap', async () => {
-        let pool1, pool2
-        const pool1Slot0Tick = toBn('70')
-        const pool2Slot0Tick = toBn('30')
+      context('through token0:token1 pool', () => {
+        let pool
 
-        // cross pool spot = 70 + 30 = 100
-        // cross pool twap = 50 + 100 = 150
+        beforeEach('setup token0:token1 pool', async () => {
+          pool = await setupPool({
+            cardinality,
+            observationIndex,
+            tokens: [token0, token1],
+            observations: [
+              // Needs two historical observations due to how the mock's #observe works
+              [toBn('-100'), toBn('10000')],
+              [toBn('0'), toBn('15000')], // twap tick rate of change = 50
+            ],
+          })
 
-        beforeEach('set pool overrides', async () => {
-          pool1 = pool1Pos
-          pool2 = pool2Pos
-          // By default the oracle will use the factory-derived pool address,
-          // so we override it to use the mock pools for the routes
-          await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
-          await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          await oracle.connect(owner).setPoolForRoute(token0.address, token1.address, pool.address)
         })
 
-        beforeEach('set spot ticks', async () => {
-          await pool1.setSlot0(pool1Slot0Tick, observationIndex)
-          await pool2.setSlot0(pool2Slot0Tick, observationIndex)
+        context('spot == twap', () => {
+          const slot0Tick = toBn('50')
+
+          beforeEach('set spot tick', async () => {
+            await pool.setSlot0(slot0Tick, observationIndex)
+          })
+
+          it('selects spot/twap', async () => {
+            const readAmountOut = await oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)
+            expect(readAmountOut).to.equal(tickConversionRatios.fifty)
+          })
         })
 
-        it('selects twap', async () => {
-          const readAmountOut = await oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)
-          expect(readAmountOut).to.be.closeTo(tickConversionRatios.oneHundred, accuracyBuffer)
-        })
-      })
+        context('spot > twap', () => {
+          const slot0Tick = toBn('100')
 
-      context('mixed spot > twap', async () => {
-        let pool1, pool2
-        const pool1Slot0Tick = toBn('20')
-        const pool2Slot0Tick = toBn('300')
+          beforeEach('set spot tick', async () => {
+            await pool.setSlot0(slot0Tick, observationIndex)
+          })
 
-        // cross pool spot = 20 + 300 = 320
-        // cross pool twap = 50 + 100 = 150
-
-        beforeEach('set pool overrides', async () => {
-          pool1 = pool1Pos
-          pool2 = pool2Pos
-          // By default the oracle will use the factory-derived pool address,
-          // so we override it to use the mock pools for the routes
-          await oracle.connect(owner).setPoolForRoute(token0.address, weth.address, pool1.address)
-          await oracle.connect(owner).setPoolForRoute(weth.address, token1.address, pool2.address)
+          it('selects twap', async () => {
+            const readAmountOut = await oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)
+            expect(readAmountOut).to.equal(tickConversionRatios.fifty)
+          })
         })
 
-        beforeEach('set spot ticks', async () => {
-          await pool1.setSlot0(pool1Slot0Tick, observationIndex)
-          await pool2.setSlot0(pool2Slot0Tick, observationIndex)
-        })
+        context('spot < twap', () => {
+          const slot0Tick = toBn('10')
 
-        it('selects twap', async () => {
-          const readAmountOut = await oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)
-          expect(readAmountOut).to.be.closeTo(tickConversionRatios.oneHundredFifty, accuracyBuffer)
+          beforeEach('set spot tick', async () => {
+            await pool.setSlot0(slot0Tick, observationIndex)
+          })
+
+          it('selects spot', async () => {
+            const readAmountOut = await oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)
+            expect(readAmountOut).to.equal(tickConversionRatios.ten)
+          })
         })
       })
     })
 
     context('asset to eth', () => {
-      // eth is token1 for these tests, so ticks are normal (e.g. higher tick -> higher output)
+      // eth is token1 for these tests, so with normal tick direction (e.g. higher tick -> higher output)
 
-      context('with positive ticks', async () => {
+      context('with positive ticks', () => {
         let pool
 
         beforeEach('set pool override', async () => {
@@ -394,7 +572,7 @@ describe('DexPriceAggregatorUniswapV3', () => {
         })
       })
 
-      context('with negative ticks', async () => {
+      context('with negative ticks', () => {
         beforeEach('set pool override', async () => {
           pool = pool1Neg
           // By default the oracle will use the factory-derived pool address,
@@ -462,9 +640,9 @@ describe('DexPriceAggregatorUniswapV3', () => {
     })
 
     context('eth to asset', () => {
-      // eth is token1 for these tests, so ticks need to be inverted (e.g. higher tick -> lower output)
+      // eth is token1 for these tests, so with inverted tick direction (e.g. higher tick -> lower output)
 
-      context('with positive ticks', async () => {
+      context('with positive ticks', () => {
         let pool
 
         beforeEach('set pool override', async () => {
@@ -532,7 +710,7 @@ describe('DexPriceAggregatorUniswapV3', () => {
         })
       })
 
-      context('with negative ticks', async () => {
+      context('with negative ticks', () => {
         let pool
 
         beforeEach('set pool override', async () => {
@@ -602,11 +780,96 @@ describe('DexPriceAggregatorUniswapV3', () => {
     })
   })
 
+  context('price query failures', () => {
+    const amountIn = units.oneInEighteen
+    const twapPeriod = toBn('60')
+
+    context('when no pool is found', () => {
+      it('cannot query price', async () => {
+        // No revert message; this will call into an invalid address
+        await expect(oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)).to.be.reverted
+      })
+    })
+
+    context('when twap period is 0', () => {
+      beforeEach('setup pool', async () => {
+        pool = await setupPool({
+          cardinality: 2,
+          observationIndex: 1,
+          tokens: [token0, token1],
+          observations: [
+            // Needs two historical observations due to how the mock's #observe works
+            [toBn('-70'), toBn('10000')],
+            [toBn('-20'), toBn('12000')],
+          ],
+        })
+
+        await oracle.connect(owner).setPoolForRoute(token0.address, token1.address, pool.address)
+      })
+
+      it('cannot query price', async () => {
+        const zeroPeriod = '0'
+        await expect(oracle.assetToAsset(token0.address, amountIn, token1.address, zeroPeriod)).to.be.revertedWith('BP')
+      })
+    })
+
+    context("when there's not enough history to fetch spot", () => {
+      const observationIndex = 1
+
+      beforeEach('setup pool', async () => {
+        pool = await setupPool({
+          observationIndex,
+          cardinality: 2,
+          tokens: [token0, token1],
+          observations: [
+            [
+              toBn('0').sub(twapPeriod).sub(toBn('1')), // set prior to twap window
+              toBn('10000'), // cumulative tick
+            ],
+            [toBn('100'), '0'], // force spot to use historical observations
+          ],
+        })
+
+        await oracle.connect(owner).setPoolForRoute(token0.address, token1.address, pool.address)
+
+        // Bring the EVM time to match current observation
+        const currentObservation = await pool.observations(observationIndex)
+        await timer.setTime(currentObservation.blockTimestamp)
+      })
+
+      it('cannot query price', async () => {
+        await expect(oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)).to.be.revertedWith('BC')
+      })
+    })
+
+    context("when there's not enough history to fetch twap", () => {
+      beforeEach('setup pool', async () => {
+        pool = await setupPool({
+          cardinality: 1,
+          observationIndex: 0,
+          observations: [
+            [
+              toBn('0').sub(twapPeriod).add(toBn('1')), // set inside twap window
+              toBn('10000'), // cumulative tick
+            ],
+          ],
+        })
+
+        await oracle.connect(owner).setPoolForRoute(token0.address, token1.address, pool.address)
+      })
+
+      it('cannot fetch ticks', async () => {
+        // invalid opcode
+        await expect(oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)).to.be.reverted
+      })
+    })
+  })
+
   context('utilities', () => {
     context('#fetchCurrentTicks', () => {
       let pool
 
-      context('when current observation is before now', async () => {
+      context('when current observation is before now', () => {
         const cardinality = 2
         const observationIndex = 1
         const slot0Tick = toBn('88')
@@ -636,7 +899,7 @@ describe('DexPriceAggregatorUniswapV3', () => {
         })
       })
 
-      context('when current observation matches now', async () => {
+      context('when current observation matches now', () => {
         const cardinality = 3
         const observationIndex = 2
         const slot0Tick = toBn('88')
@@ -669,7 +932,7 @@ describe('DexPriceAggregatorUniswapV3', () => {
         })
       })
 
-      context("when there's not enough history to fetch spot", async () => {
+      context("when there's not enough history to fetch spot", () => {
         const cardinality = 2
         const observationIndex = 1
         const twapPeriod = toBn('60') // 1min
@@ -694,7 +957,7 @@ describe('DexPriceAggregatorUniswapV3', () => {
         })
       })
 
-      context("when there's not enough history to fetch twap", async () => {
+      context("when there's not enough history to fetch twap", () => {
         const cardinality = 1
         const observationIndex = 0
         const twapPeriod = toBn('60') // 1min
@@ -709,7 +972,6 @@ describe('DexPriceAggregatorUniswapV3', () => {
                 toBn('10000'), // cumulative tick
               ],
             ],
-            slot0Tick: toBn('1000'), // use slot 0 for spot
           })
         })
 
@@ -773,7 +1035,7 @@ describe('DexPriceAggregatorUniswapV3', () => {
       // tick1 represents asset1 -> asset2 and tick2 represents asset2 -> asset3)
 
       // We use a constant 1e18 amountIn (1 token for 18-decimal tokens) to simplify output calculations
-      const amountIn = ethers.utils.parseUnits('1', 18)
+      const amountIn = units.oneInEighteen
       // Anticipate some loss of precision when "crossing" due to the separate calculations
       const accuracyBuffer = toBn('1')
 
