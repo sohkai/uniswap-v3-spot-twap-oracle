@@ -814,31 +814,29 @@ describe('DexPriceAggregatorUniswapV3', () => {
     })
 
     context("when there's not enough history to fetch spot", () => {
-      const observationIndex = 1
+      const observationIndex = 0
 
       beforeEach('setup pool', async () => {
         pool = await setupPool({
           observationIndex,
-          cardinality: 2,
+          cardinality: 1,
           tokens: [token0, token1],
           observations: [
             [
               toBn('0').sub(twapPeriod).sub(toBn('1')), // set prior to twap window
               toBn('10000'), // cumulative tick
             ],
-            [toBn('100'), '0'], // force spot to use historical observations
           ],
         })
 
         await oracle.connect(owner).setPoolForRoute(token0.address, token1.address, pool.address)
-
-        // Bring the EVM time to match current observation
-        const currentObservation = await pool.observations(observationIndex)
-        await timer.setTime(currentObservation.blockTimestamp)
       })
 
       it('cannot query price', async () => {
-        await expect(oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)).to.be.revertedWith('BC')
+        // With production V3 pools this will revert with 'BC' but this test reverts on the mock
+        // pool instead because TWAP is queried first and the mock pool requires two observations
+        // for its #observe
+        await expect(oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)).to.be.reverted
       })
     })
 
@@ -920,8 +918,8 @@ describe('DexPriceAggregatorUniswapV3', () => {
         })
 
         it('fetches correct spot and twap ticks', async () => {
-          // prior observation's tick rate of change = (12000 - 10000) / (70 - 20) = 40
-          const expectedSpotTick = toBn('40')
+          // prior observation's tick rate of change = (13000 - 12000) / (10 - -20) = 33
+          const expectedSpotTick = toBn('33')
           // prior two observations' twap rate of change = (30s * 40 + 30s * 33) / 60s ~= 36
           const expectedTwapTick = toBn('36')
 
@@ -933,27 +931,28 @@ describe('DexPriceAggregatorUniswapV3', () => {
       })
 
       context("when there's not enough history to fetch spot", () => {
-        const cardinality = 2
-        const observationIndex = 1
+        const cardinality = 1
+        const observationIndex = 0
         const twapPeriod = toBn('60') // 1min
 
         beforeEach('setup pool', async () => {
           pool = await setupPool({
             cardinality,
             observationIndex,
-            matchTime: true, // force spot to use historical observations
             observations: [
               [
                 toBn('0').sub(twapPeriod).sub(toBn('1')), // set prior to twap window
                 toBn('10000'), // cumulative tick
               ],
-              [toBn('100'), '0'], // force spot to use historical observations
             ],
           })
         })
 
         it('cannot fetch ticks', async () => {
-          await expect(oracle.fetchCurrentTicks(pool.address, twapPeriod)).to.be.revertedWith('BC')
+          // With production V3 pools this will revert with 'BC' but this test reverts on the mock
+          // pool instead because TWAP is queried first and the mock pool requires two observations
+          // for its #observe
+          await expect(oracle.fetchCurrentTicks(pool.address, twapPeriod)).to.be.reverted
         })
       })
 

@@ -12,25 +12,26 @@ import '@uniswap/v3-periphery/contracts/libraries/PoolAddress.sol';
 library SpotOracleLibrary {
     /// @notice Fetches spot tick using Uniswap V3 oracle
     /// @param pool Address of Uniswap V3 pool to observe
-    /// @return spotTick The spot tick, which is either the prior trading block's first observed or ending tick
+    /// @return spotTick The spot tick, which is the prior block's ending tick
     function consult(address pool) internal view returns (int24 spotTick) {
         (, int24 currentTick, uint16 currentObservationIndex, uint16 observationCardinality, , , ) = IUniswapV3Pool(pool).slot0();
-        (uint32 currentObservationTimestamp, , , ) = IUniswapV3Pool(pool).observations(currentObservationIndex);
+        (uint32 currentObservationTimestamp, int56 currentTickCumulative , , ) = IUniswapV3Pool(pool).observations(currentObservationIndex);
         // Stored timestamps are truncated, so assume the last observation was made within a uint32 second time window (~136 years)
         if (beforeNow(currentObservationTimestamp)) {
             // The last observation was written prior to this block, so no trades have occurred since then
             // The pool's current tick can be considered its spot tick
             spotTick = currentTick;
         } else {
-            // The last observation was written in this block.
-            // Both the current tick value and the last observation are now considered unreliable
-            // due to potential manipulation from prior transactions in this block.
-            // Instead, provide spot as prior trading block's observed tick.
-            spotTick = fetchPreviouslyObservedTick(
-                pool,
-                1, // fetch second-last observation (one before last)
-                currentObservationIndex,
-                observationCardinality
+            // The last observation was written in this block, making the current tick value
+            // unreliable as it could have been manipulated.
+            // Instead, provide spot as prior block's ending tick.
+            (uint32 priorTimestamp, int56 priorTickCumulative) =
+                fetchPriorObservation(pool, 1, currentObservationIndex, observationCardinality);
+            spotTick = untransformCumulativesIntoTick(
+                currentObservationTimestamp,
+                currentTickCumulative,
+                priorTimestamp,
+                priorTickCumulative
             );
         }
     }
@@ -41,7 +42,18 @@ library SpotOracleLibrary {
     /// @return observedTick Previously observed tick
     function consultPreviouslyObservedTick(address pool, uint16 prevSteps) internal view returns (int24 observedTick) {
         (, , uint16 currentObservationIndex, uint16 observationCardinality, , , ) = IUniswapV3Pool(pool).slot0();
-        return fetchPreviouslyObservedTick(pool, prevSteps, currentObservationIndex, observationCardinality);
+
+        (uint32 targetTimestamp, int56 targetTickCumulative) =
+            fetchPriorObservation(pool, prevSteps, currentObservationIndex, observationCardinality);
+        (uint32 targetMinusOneTimestamp, int56 targetMinusOneTickCumulative) =
+            fetchPriorObservation(pool, prevSteps + 1, currentObservationIndex, observationCardinality);
+
+        observedTick = untransformCumulativesIntoTick(
+            targetTimestamp,
+            targetTickCumulative,
+            targetMinusOneTimestamp,
+            targetMinusOneTickCumulative
+        );
     }
 
     /// @dev Returns whether given timestamp (truncated to 32 bits) is before current block timestamp.
@@ -56,37 +68,6 @@ library SpotOracleLibrary {
         return beforeOrNow != uint32(block.timestamp); // truncation is desired
     }
 
-    /// @dev Fetch a previously observed tick.
-    ///      This tick _may not_ be the same as the ending tick of a block (ie. reading pool.slot0()'s currentTick)
-    ///      as observations are only written to once per block, during the pool's first trade or liquidity change.
-    /// @param pool Address of Uniswap V3 pool to observe
-    /// @param prevSteps Number of tick observations to go backwards from current
-    /// @param currentObservationIndex Current observation index
-    /// @param observationCardinality Observation cardinality
-    /// @return observedTick Previously observed tick
-    function fetchPreviouslyObservedTick(
-        address pool,
-        uint16 prevSteps,
-        uint16 currentObservationIndex,
-        uint16 observationCardinality
-    ) private view returns (int24 observedTick) {
-        // Fetch prior target observation (target) and the one before it (target-1)
-        (uint32 targetTimestamp, int56 targetTickCumulative, uint16 targetIndex) =
-            fetchPriorObservation(pool, prevSteps, currentObservationIndex, observationCardinality);
-        (uint32 targetMinusOneTimestamp, int56 targetMinusOneTickCumulative, uint targetMinusOneIndex) =
-            fetchPriorObservation(pool, 1, targetIndex, observationCardinality);
-        require(targetMinusOneIndex != currentObservationIndex, 'BC'); // not enough cardinality for target-1
-
-        // "Untransform" target and target-1 into the target's tick value
-        // Assume these two observations were made within a uint32 second time window (~136 years)
-        uint32 timeDelta = targetTimestamp - targetMinusOneTimestamp; // underflow is desired
-        int56 tickDelta = targetTickCumulative - targetMinusOneTickCumulative;
-
-        observedTick = int24(tickDelta / timeDelta);
-        // Always round observed tick to negative infinity
-        if (tickDelta < 0 && (tickDelta % timeDelta != 0)) observedTick--;
-    }
-
     /// @dev Fetch a prior observation `prevSteps` before a starting index.
     ///      Handles cardinality wrapping and uninitialized observations after cardinality growth.
     /// @param pool Address of Uniswap V3 pool to observe
@@ -95,23 +76,22 @@ library SpotOracleLibrary {
     /// @param observationCardinality Observation cardinality
     /// @return timestamp Prior observation's timestamp
     /// @return tickCumulative Prior observation's tick cumulative value
-    /// @return observationIndex Prior observation's index
     function fetchPriorObservation(
         address pool,
         uint16 prevSteps,
         uint16 startingObservationIndex,
         uint16 observationCardinality
-    ) private view returns (uint32 timestamp, int56 tickCumulative, uint16 observationIndex) {
+    ) private view returns (uint32 timestamp, int56 tickCumulative) {
         bool initialized;
         for(; !initialized && prevSteps < observationCardinality; ++prevSteps) {
             // This loop handles a specific case when the pool's cardinality has increased but has
             // not yet observed enough new trades to fill out the new indices.
             // If we loop back from 0 to the last index, we will find uninitialized observations and
             // will have to keep looking back.
-            observationIndex = prevObservationIndex(prevSteps, startingObservationIndex, observationCardinality);
+            uint16 observationIndex = prevObservationIndex(prevSteps, startingObservationIndex, observationCardinality);
             (timestamp, tickCumulative, , initialized) = IUniswapV3Pool(pool).observations(observationIndex);
         }
-        require(initialized, 'BO'); // ensure found observation is initialized and within cardinality
+        require(initialized, 'BC'); // ensure found observation is initialized and within cardinality
     }
 
     /// @dev Calculate the index of a past observation `prevSteps` before a starting index.
@@ -127,5 +107,27 @@ library SpotOracleLibrary {
         } else {
             return starting - prevSteps;
         }
+    }
+
+    /// @dev Untransform two observations into the more recent observation's tick value at write time
+    /// @param soonerTimestamp More recent observation's timestamp
+    /// @param soonerTickCumulative More recent observation's tick cumulative
+    /// @param laterTimestamp Less recent observation's timestamp
+    /// @param laterTickCumulative Less recent observation's tick cumulative
+    /// @return tick More recent observation's tick
+    function untransformCumulativesIntoTick(
+        uint32 soonerTimestamp,
+        int56 soonerTickCumulative,
+        uint32 laterTimestamp,
+        int56 laterTickCumulative
+    ) private pure returns (int24 tick) {
+        // "Untransform" sooner and later into the sooner's tick value
+        // Assume these two observations were made within a uint32 second time window (~136 years)
+        uint32 timeDelta = soonerTimestamp - laterTimestamp; // underflow is desired
+        int56 tickDelta = soonerTickCumulative - laterTickCumulative;
+
+        tick = int24(tickDelta / timeDelta);
+        // Always round observed tick to negative infinity
+        if (tickDelta < 0 && (tickDelta % timeDelta != 0)) tick--;
     }
 }

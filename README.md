@@ -9,12 +9,12 @@ Able to handle queries for asset prices across an intermediate liquidity pool (e
 ## Deployments
 
 - Mainnet:
-  - [Non-controllable: `0xEb3107117FEAd7de89Cd14D463D340A2E6917769`](https://etherscan.io/address/0xeb3107117fead7de89cd14d463d340a2e6917769)
+  - [Non-controllable: `0xF8FEe9AD9C20705D806eABEB250d5E606C2D8bC3`](https://etherscan.io/address/0xf8fee9ad9c20705d806eabeb250d5e606c2d8bc3#readContract)
     - Owner: `address(0xdead)`
     - UniswapV3Factory: [`0x1F98431c8aD98523631AE4a59f267346ea31F984`](https://etherscan.io/address/0x1f98431c8ad98523631ae4a59f267346ea31f984)
     - WETH: [WETH9](https://etherscan.io/address/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2)
     - Default pool fee: `3000`
-  - [Synthetix-controlled: `0x925fc225dD238A4637E4aaD343332Ea580a43bb8`](https://etherscan.io/address/0x925fc225dd238a4637e4aad343332ea580a43bb8#readContract)
+  - [Synthetix-controlled: `0x074Fe031AD93e6a2f6037EB1fAa0BDc424DCe79d`](https://etherscan.io/address/0x074fe031ad93e6a2f6037eb1faa0bdc424dce79d#readContract)
     - Owner: [`0xEb3107117FEAd7de89Cd14D463D340A2E6917769`](https://etherscan.io/address/0xeb3107117fead7de89cd14d463d340a2e6917769) (Synthetix protocolDAO)
     - UniswapV3Factory: [`0x1F98431c8aD98523631AE4a59f267346ea31F984`](https://etherscan.io/address/0x1f98431c8ad98523631ae4a59f267346ea31f984)
     - WETH: [WETH9](https://etherscan.io/address/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2)
@@ -81,33 +81,15 @@ This can be used to configure the oracle to query alternative pools (e.g. 5bps f
 
 ## Security considerations
 
-### Spot price is nuanced
+### Spot price is at least one block old
 
-The spot quote reported by this oracle is nuanced. Its definition of "spot" changes based on how the underlying pool(s) were interacted with. The spot quote is always at least one block old, in price-freshness terms.
-
-The following different measures of "spot" can be reported:
-
-```
-Were the underlying pool(s) interacted with (via trade or liquidity change) this block?
-  -> No: report last observed price from a prior block (end of block price)
-  -> Yes: Was the last observation made in a block with only one trade?
-    -> No: report the first observed price from that block
-    -> Yes: report the only observed price from that block (i.e. first and last observed price are same; end of block price)
-```
-
-In particular, the second "No" case is important: actors may influence the pool's recorded observation (and thereby reported spot and TWAP quotes) by making the first trade in a block. Assuming they reverse the trade immediately, it only costs the actor `2 * fee` to influence a pool's price, with `fee` determined by how much liquidity they needed to trade to move the price to a desired target.
-
-This case is somewhat shielded in this oracle, requiring a multi-block operation. A diligent actor would have to:
-
-1. Watch the mempool for a transaction that queries from this oracle
-2. Prime the underlying pool by making the first interactions with the pool in prior blocks
-3. Execute their sandwich
+The spot quote reported by this oracle is delayed. To protect from intra-block manipulation, this quote is always at least one block old and does not consider any changes to the pool from the current block.
 
 ### Gas consumption can dramatically vary
 
 Because Uniswap V3's pools do not contain an external API for fetching the prior initialized observations, this oracle makes its best attempt to loop through the pool's observation slots to find prior observations.
 
-An out-of-gas (or very large gas spend) may occur if an underlying pool's cardinality was increased when its observation index was `0` or `1`. In this case, to obtain spot (requiring two prior initialized observations), the oracle will be forced to loop through `currentCardinality - lastCardinality` indices (~3-5k per index).
+An out-of-gas (or very large gas spend) may occur if an underlying pool's cardinality was increased when its observation index was `0`. In this case, to obtain spot (requiring two prior initialized observations), the oracle will be forced to loop through `currentCardinality - lastCardinality` indices (~3-5k per index).
 
 Due to the inherent gas costs involved in increasing cardinality (at least 20k per index, based on `SSTORE`s), it would be impossible to DDOS this oracle by doing this as reading each index only costs ~3-5k (less than 20k). However, it can still dramatically increase the gas cost of a price query until new observations are written to the pool.
 

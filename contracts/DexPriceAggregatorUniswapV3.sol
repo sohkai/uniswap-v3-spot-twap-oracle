@@ -13,7 +13,7 @@ import './Owned.sol';
 /// @title DexPriceAggregatorUniswapV3
 /// @notice A DexPriceAggregator sourcing prices from Uniswap V3.
 ///         Provides the minimum output between an asset's "spot" price and TWAP from the last n seconds.
-///         The "spot" price can be slightly outdated--it is either the prior trading block's first observed or ending price.
+///         The "spot" price is always the last block's ending price.
 contract DexPriceAggregatorUniswapV3 is IDexPriceAggregator, Owned {
     address public immutable uniswapV3Factory;
     address public immutable weth;

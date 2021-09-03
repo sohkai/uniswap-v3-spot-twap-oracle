@@ -94,8 +94,8 @@ describe('OracleSpotLibrary', () => {
 
     context('when current observation matches now', () => {
       context('with enough prior observations', () => {
-        const cardinality = 3
-        const observationIndex = 2
+        const cardinality = 2
+        const observationIndex = 1
 
         beforeEach('setup pool', async () => {
           pool = await setupPool({
@@ -103,16 +103,15 @@ describe('OracleSpotLibrary', () => {
             observationIndex,
             matchTime: true,
             observations: [
-              [toBn('100'), toBn('5000')], // prior-1 observation
-              [toBn('200'), toBn('6000')], // prior observation
-              [toBn('201'), 0], // current observation (tick unused)
+              [toBn('100'), toBn('5000')], // prior observation
+              [toBn('200'), toBn('6000')], // current observation
             ],
           })
         })
 
         it('reads correct spot tick', async () => {
-          // prior - prior-1 observation time = 100s
-          // prior - prior-1 tick cumulative = 1000
+          // current - prior observation time = 100s
+          // current - prior tick cumulative = 1000
           // tick delta = 10
           const expectedTick = toBn('10')
 
@@ -122,8 +121,8 @@ describe('OracleSpotLibrary', () => {
       })
 
       context('with enough prior observations on imprecise ticks', () => {
-        const cardinality = 3
-        const observationIndex = 2
+        const cardinality = 2
+        const observationIndex = 1
 
         beforeEach('setup pool', async () => {
           pool = await setupPool({
@@ -131,16 +130,15 @@ describe('OracleSpotLibrary', () => {
             observationIndex,
             matchTime: true,
             observations: [
-              [toBn('134'), toBn('5133')], // prior-1 observation
-              [toBn('200'), toBn('6000')], // prior observation
-              [toBn('201'), 0], // current observation (tick unused)
+              [toBn('134'), toBn('5133')], // prior observation
+              [toBn('200'), toBn('6000')], // current observation
             ],
           })
         })
 
         it('reads correct spot tick', async () => {
-          // prior - prior-1 observation time = 64s
-          // prior - prior-1 tick cumulative = 867
+          // current - prior observation time = 64s
+          // current - prior tick cumulative = 867
           // tick delta ~= 13.54
           // tick delta floored = 13
           const expectedTick = toBn('13')
@@ -151,8 +149,8 @@ describe('OracleSpotLibrary', () => {
       })
 
       context('with enough prior observations on negative ticks', () => {
-        const cardinality = 3
-        const observationIndex = 2
+        const cardinality = 2
+        const observationIndex = 1
 
         beforeEach('setup pool', async () => {
           pool = await setupPool({
@@ -160,16 +158,15 @@ describe('OracleSpotLibrary', () => {
             observationIndex,
             matchTime: true,
             observations: [
-              [toBn('134'), toBn('-5133')], // prior-1 observation
-              [toBn('200'), toBn('-6000')], // prior observation
-              [toBn('201'), 0], // current observation (tick unused)
+              [toBn('134'), toBn('-5133')], // prior observation
+              [toBn('200'), toBn('-6000')], // current observation
             ],
           })
         })
 
         it('reads correct spot tick', async () => {
-          // prior - prior-1 observation time = 64s
-          // prior - prior-1 tick cumulative = -867
+          // current - prior observation time = 64s
+          // current - prior tick cumulative = -867
           // tick delta ~= -13.54
           // tick delta rounded to neg infinity = -14
           const expectedTick = toBn('-14')
@@ -180,7 +177,7 @@ describe('OracleSpotLibrary', () => {
       })
 
       context('with enough prior observations by wrapping cardinality', () => {
-        const cardinality = 3
+        const cardinality = 2
         const observationIndex = 0
 
         beforeEach('setup pool', async () => {
@@ -189,16 +186,15 @@ describe('OracleSpotLibrary', () => {
             observationIndex,
             matchTime: true,
             observations: [
-              [toBn('201'), 0], // current observation (tick unused)
-              [toBn('31'), toBn('4269')], // prior-1 observation
-              [toBn('200'), toBn('8888')], // prior observation
+              [toBn('200'), toBn('8888')], // current observation
+              [toBn('31'), toBn('4269')], // prior observation
             ],
           })
         })
 
         it('reads correct spot tick', async () => {
-          // prior - prior-1 observation time = 169s
-          // prior - prior-1 tick cumulative = 4619
+          // current - prior observation time = 169s
+          // current - prior tick cumulative = 4619
           // tick delta ~= 27.33
           // tick delta floored = 27
           const expectedTick = toBn('27')
@@ -218,50 +214,19 @@ describe('OracleSpotLibrary', () => {
             observationIndex,
             matchTime: true,
             observations: [
-              [toBn('201'), 0], // current observation (tick unused)
-              [toBn('42'), toBn('1337')], // prior-1 observation
-              [toBn('210'), toBn('6969')], // prior observation
+              [toBn('210'), toBn('6969')], // current observation
+              [toBn('42'), toBn('1337')], // prior observation
               // last observation is left uninitialized
             ],
           })
         })
 
         it('reads correct spot tick', async () => {
-          // prior - prior-1 observation time = 168s
-          // prior - prior-1 tick cumulative = 5632
+          // current - prior observation time = 168s
+          // current - prior tick cumulative = 5632
           // tick delta ~= 33.52
           // tick delta floored = 33
           const expectedTick = toBn('33')
-
-          const spotTick = await oracle.consult(pool.address)
-          expect(spotTick).to.equal(expectedTick)
-        })
-      })
-
-      context('with enough prior observations but with uninitialized ones for prior-1', () => {
-        const cardinality = 6
-        const observationIndex = 1
-
-        beforeEach('setup pool', async () => {
-          pool = await setupPool({
-            cardinality,
-            observationIndex,
-            matchTime: true,
-            observations: [
-              [toBn('314'), toBn('117110105')], // prior observation
-              [toBn('201'), 0], // current observation (tick unused)
-              [toBn('42'), toBn('115110120')], // prior-1 observation
-              // last 3 observations are left uninitialized
-            ],
-          })
-        })
-
-        it('reads correct spot tick', async () => {
-          // prior - prior-1 observation time = 272s
-          // prior - prior-1 tick cumulative = 1999985
-          // tick delta ~= 7352.89
-          // tick delta floored = 7352
-          const expectedTick = toBn('7352')
 
           const spotTick = await oracle.consult(pool.address)
           expect(spotTick).to.equal(expectedTick)
@@ -284,34 +249,13 @@ describe('OracleSpotLibrary', () => {
         })
 
         it('cannot read spot tick', async () => {
-          await expect(oracle.consult(pool.address)).to.be.revertedWith('BO')
-        })
-      })
-
-      context('without enough prior observations', () => {
-        const cardinality = 2
-        const observationIndex = 1
-
-        beforeEach('setup pool', async () => {
-          pool = await setupPool({
-            cardinality,
-            observationIndex,
-            matchTime: true,
-            observations: [
-              [toBn('100'), toBn('5000')], // prior observation
-              [toBn('101'), 0], // current observation (tick unused)
-            ],
-          })
-        })
-
-        it('cannot read spot tick', async () => {
           await expect(oracle.consult(pool.address)).to.be.revertedWith('BC')
         })
       })
 
       context('without enough prior observations even by wrapping cardinality with uninitialized ones', () => {
-        const cardinality = 4
-        const observationIndex = 1
+        const cardinality = 3
+        const observationIndex = 0
 
         beforeEach('setup pool', async () => {
           pool = await setupPool({
@@ -319,7 +263,6 @@ describe('OracleSpotLibrary', () => {
             observationIndex,
             matchTime: true,
             observations: [
-              [toBn('100'), toBn('5000')], // prior observation
               [toBn('101'), 0], // current observation (tick unused)
               // last two observations are left uninitialized
             ],
@@ -352,7 +295,7 @@ describe('OracleSpotLibrary', () => {
         })
       })
 
-      it('can fetch up to cardinality - 2 prior ticks', async () => {
+      it('can fetch up to cardinality - 1 prior ticks', async () => {
         const readTick0 = await oracle.consultPreviouslyObservedTick(pool.address, 0)
         const readTick1 = await oracle.consultPreviouslyObservedTick(pool.address, 1)
         const readTick2 = await oracle.consultPreviouslyObservedTick(pool.address, 2)
@@ -376,9 +319,8 @@ describe('OracleSpotLibrary', () => {
         expect(readTick2).to.equal(expectedTick2)
       })
 
-      it('cannot fetch past cardinality - 2 prior ticks', async () => {
-        await expect(oracle.consultPreviouslyObservedTick(pool.address, cardinality - 1)).to.be.revertedWith('BC') // edge of cardinality
-        await expect(oracle.consultPreviouslyObservedTick(pool.address, cardinality)).to.be.revertedWith('BO') // past cardinality
+      it('cannot fetch past cardinality prior ticks', async () => {
+        await expect(oracle.consultPreviouslyObservedTick(pool.address, cardinality)).to.be.revertedWith('BC') // past cardinality
       })
     })
 
@@ -399,7 +341,7 @@ describe('OracleSpotLibrary', () => {
         })
       })
 
-      it('can fetch up to initialized observations - 2 prior ticks', async () => {
+      it('can fetch up to initialized observations - 1 prior ticks', async () => {
         const readTick0 = await oracle.consultPreviouslyObservedTick(pool.address, 0)
         const readTick1 = await oracle.consultPreviouslyObservedTick(pool.address, 1)
 
@@ -417,8 +359,7 @@ describe('OracleSpotLibrary', () => {
       })
 
       it('cannot fetch further in the past', async () => {
-        await expect(oracle.consultPreviouslyObservedTick(pool.address, 2)).to.be.revertedWith('BC') // edge of cardinality
-        await expect(oracle.consultPreviouslyObservedTick(pool.address, 3)).to.be.revertedWith('BO') // past cardinality
+        await expect(oracle.consultPreviouslyObservedTick(pool.address, 3)).to.be.revertedWith('BC') // past initialized cardinality
       })
     })
 
@@ -437,8 +378,8 @@ describe('OracleSpotLibrary', () => {
       })
 
       it('cannot fetch any past ticks', async () => {
-        await expect(oracle.consultPreviouslyObservedTick(pool.address, 0)).to.be.revertedWith('BO')
-        await expect(oracle.consultPreviouslyObservedTick(pool.address, 1)).to.be.revertedWith('BO')
+        await expect(oracle.consultPreviouslyObservedTick(pool.address, 0)).to.be.revertedWith('BC')
+        await expect(oracle.consultPreviouslyObservedTick(pool.address, 1)).to.be.revertedWith('BC')
       })
     })
   })
