@@ -3,7 +3,7 @@ const { HardhatPluginError } = require('hardhat/plugins')
 const { TASK_TEST } = require('hardhat/builtin-tasks/task-names')
 
 const { globForTests } = require('./util')
-const mainnetConfiguration = require('../config/mainnet-e2e')
+const mainnetE2eConfiguration = require('../config/mainnet-e2e')
 
 const PLUGIN_NAME = 'TestType'
 const TEST_TYPES = {
@@ -17,7 +17,7 @@ extendConfig((config) => {
   if (forkingEnabled) {
     config.networks.hardhat.forking = {
       url: process.env.FORK_NODE,
-      blockNumber: mainnetConfiguration.forkBlockNumber,
+      blockNumber: mainnetE2eConfiguration.forkBlockNumber,
       enabled: true,
     }
   }

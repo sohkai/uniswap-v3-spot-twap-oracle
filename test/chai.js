@@ -7,7 +7,7 @@ chai.use(jestSnapshotPlugin())
 
 // Custom matchers
 chai.use(function (chai) {
-  chai.Assertion.addMethod('addressEqual', async function (address2) {
+  chai.Assertion.addMethod('addressEqual', function (address2) {
     const subject = this._obj
     this.assert(
       ethers.utils.getAddress(subject) === ethers.utils.getAddress(address2),
