@@ -32,7 +32,7 @@ async function selectConfig() {
         {
           name: 'synthetix',
           value: 'synthetix',
-        }
+        },
       ],
       default: 0, // default to frozen
     },
@@ -72,12 +72,6 @@ async function confirm(config) {
 
 async function deploy(config) {
   console.log('Deploying...')
-  console.log(
-    config.owner,
-    config.uniswapV3Factory,
-    config.weth,
-    config.defaultPoolFee
-  )
   const dexPriceAggregatorUniswapV3Factory = await hre.ethers.getContractFactory('DexPriceAggregatorUniswapV3')
   const oracle = await dexPriceAggregatorUniswapV3Factory.deploy(
     config.owner,
@@ -98,12 +92,7 @@ async function verify(oracle, config) {
   console.log('Verifying on Etherscan...')
   await hre.run('verify:verify', {
     address: oracle.address,
-    constructorArguments: [
-      config.owner,
-      config.uniswapV3Factory,
-      config.weth,
-      config.defaultPoolFee
-    ],
+    constructorArguments: [config.owner, config.uniswapV3Factory, config.weth, config.defaultPoolFee],
   })
 }
 
