@@ -9,12 +9,12 @@ Able to handle queries for asset prices across an intermediate liquidity pool (e
 ## Deployments
 
 - Mainnet:
-  - [Non-controllable: `0xF8FEe9AD9C20705D806eABEB250d5E606C2D8bC3`](https://etherscan.io/address/0xf8fee9ad9c20705d806eabeb250d5e606c2d8bc3#readContract)
+  - [Non-controllable: `0x813A5C304b8E37fA98F43A33DCCf60fA5cDb8739`](https://etherscan.io/address/0x813a5c304b8e37fa98f43a33dccf60fa5cdb8739#readContract)
     - Owner: `address(0xdead)`
     - UniswapV3Factory: [`0x1F98431c8aD98523631AE4a59f267346ea31F984`](https://etherscan.io/address/0x1f98431c8ad98523631ae4a59f267346ea31f984)
     - WETH: [WETH9](https://etherscan.io/address/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2)
     - Default pool fee: `3000`
-  - [Synthetix-controlled: `0x074Fe031AD93e6a2f6037EB1fAa0BDc424DCe79d`](https://etherscan.io/address/0x074fe031ad93e6a2f6037eb1faa0bdc424dce79d#readContract)
+  - [Synthetix-controlled: `0xf120F029Ac143633d1942e48aE2Dfa2036C5786c`](https://etherscan.io/address/0xf120f029ac143633d1942e48ae2dfa2036c5786c#readContract)
     - Owner: [`0xEb3107117FEAd7de89Cd14D463D340A2E6917769`](https://etherscan.io/address/0xeb3107117fead7de89cd14d463d340a2e6917769) (Synthetix protocolDAO)
     - UniswapV3Factory: [`0x1F98431c8aD98523631AE4a59f267346ea31F984`](https://etherscan.io/address/0x1f98431c8ad98523631ae4a59f267346ea31f984)
     - WETH: [WETH9](https://etherscan.io/address/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2)
@@ -85,15 +85,13 @@ This can be used to configure the oracle to query alternative pools (e.g. 5bps f
 
 The spot quote reported by this oracle is delayed. To protect from intra-block manipulation, this quote is always at least one block old and does not consider any changes to the pool from the current block.
 
-### Gas consumption can dramatically vary
+### Oracle can revert in rare but predictable occasions
 
-Because Uniswap V3's pools do not contain an external API for fetching the prior initialized observations, this oracle makes its best attempt to loop through the pool's observation slots to find prior observations.
+The spot quote can be influenced to not be retrievable in certain, predictable scenarios, causing price queries to fail. Specifically, when the underlying pool's observations "rewinds" back to the 0 slot, any account can extend the pool's cardinality and create uninitialized slots at the end of the cardinality. The oracle chooses to revert in this situation rather than loop back through the uninitialized slots to avoid using an unbounded amount of gas.
 
-An out-of-gas (or very large gas spend) may occur if an underlying pool's cardinality was increased when its observation index was `0`. In this case, to obtain spot (requiring two prior initialized observations), the oracle will be forced to loop through `currentCardinality - lastCardinality` indices (~3-5k per index).
+This situation fixes itself in the block after the next iteration with the underlying pool due to the observation slot moving away from 0. In the worst case, a blocked user can interact with the pool themselves to restore access to any applications querying prices.
 
-Due to the inherent gas costs involved in increasing cardinality (at least 20k per index, based on `SSTORE`s), it would be impossible to DDOS this oracle by doing this as reading each index only costs ~3-5k (less than 20k). However, it can still dramatically increase the gas cost of a price query until new observations are written to the pool.
-
-Also worthwhile to note is that increasing the cardinality would also affect the cost to fetch the TWAP, but is largely mitigated from the binary search used in finding relevant observations for calculating the TWAP.
+This situation becomes rarer with larger cardinalities, so another approach of alleviating this issue is to increase the cardinalities of the pools being queried.
 
 ## Development
 

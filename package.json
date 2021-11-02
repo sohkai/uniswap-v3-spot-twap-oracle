@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@uniswap/v3-core": "^1.0.0",
-    "@uniswap/v3-periphery": "^1.1.1"
+    "@uniswap/v3-periphery": "github:Uniswap/v3-periphery#8c69a4acca4149802735e5a961d442a5c1fa644e"
   },
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.2",
@@ -16,13 +16,13 @@
     "@nomiclabs/hardhat-waffle": "^2.0.1",
     "chai": "^4.3.4",
     "ethereum-waffle": "^3.4.0",
-    "ethers": "^5.4.6",
-    "glob": "^7.1.7",
-    "hardhat": "^2.6.2",
+    "ethers": "^5.5.1",
+    "glob": "^7.2.0",
+    "hardhat": "^2.6.6",
     "hardhat-local-networks-config-plugin": "^0.0.6",
-    "inquirer": "^8.1.2",
+    "inquirer": "^8.2.0",
     "mocha-chai-jest-snapshot": "^1.1.3",
-    "prettier": "^2.3.2",
+    "prettier": "^2.4.1",
     "prettier-plugin-solidity": "*",
     "solhint": "^3.3.6",
     "solhint-plugin-prettier": "^0.0.5"

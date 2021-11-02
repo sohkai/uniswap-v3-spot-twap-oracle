@@ -6,7 +6,6 @@ import '@uniswap/v3-periphery/contracts/libraries/OracleLibrary.sol';
 import '@uniswap/v3-periphery/contracts/libraries/PoolAddress.sol';
 
 import './interfaces/IDexPriceAggregator.sol';
-import './libraries/SpotOracleLibrary.sol';
 import './libraries/SafeCast.sol';
 import './Owned.sol';
 
@@ -129,7 +128,7 @@ contract DexPriceAggregatorUniswapV3 is IDexPriceAggregator, Owned {
     /// @return spotTick The pool's current "spot" tick
     /// @return twapTick The twap tick for the last _twapPeriod seconds
     function fetchCurrentTicks(address _pool, uint32 _twapPeriod) public view returns (int24 spotTick, int24 twapTick) {
-        spotTick = SpotOracleLibrary.consult(_pool);
+        spotTick = OracleLibrary.getBlockStartingTick(_pool);
         twapTick = OracleLibrary.consult(_pool, _twapPeriod);
     }
 
@@ -189,7 +188,7 @@ contract DexPriceAggregatorUniswapV3 is IDexPriceAggregator, Owned {
         uint256 _twapPeriod
     ) internal view returns (uint256 amountOut) {
         // Leave ticks as int256s to avoid solidity casting
-        int256 spotTick = SpotOracleLibrary.consult(_pool);
+        int256 spotTick = OracleLibrary.getBlockStartingTick(_pool);
         int256 twapTick = OracleLibrary.consult(_pool, SafeCast.toUint32(_twapPeriod));
 
         // Return min amount between spot price and twap
@@ -243,8 +242,8 @@ contract DexPriceAggregatorUniswapV3 is IDexPriceAggregator, Owned {
         address pool1 = _getPoolForRoute(PoolAddress.getPoolKey(_tokenIn, weth, defaultPoolFee));
         address pool2 = _getPoolForRoute(PoolAddress.getPoolKey(_tokenOut, weth, defaultPoolFee));
 
-        int24 spotTick1 = SpotOracleLibrary.consult(pool1);
-        int24 spotTick2 = SpotOracleLibrary.consult(pool2);
+        int24 spotTick1 = OracleLibrary.getBlockStartingTick(pool1);
+        int24 spotTick2 = OracleLibrary.getBlockStartingTick(pool2);
         uint256 spotAmountOut = _getQuoteCrossingTicksThroughWeth(_tokenIn, _amountIn, _tokenOut, spotTick1, spotTick2);
 
         uint32 castedTwapPeriod = SafeCast.toUint32(_twapPeriod);

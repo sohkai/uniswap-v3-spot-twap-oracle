@@ -833,7 +833,7 @@ describe('DexPriceAggregatorUniswapV3', () => {
       })
 
       it('cannot query price', async () => {
-        // With production V3 pools this will revert with 'BC' but this test reverts on the mock
+        // With production V3 pools this will revert with 'ONI' but this test reverts on the mock
         // pool instead because TWAP is queried first and the mock pool requires two observations
         // for its #observe
         await expect(oracle.assetToAsset(token0.address, amountIn, token1.address, twapPeriod)).to.be.reverted
@@ -949,7 +949,7 @@ describe('DexPriceAggregatorUniswapV3', () => {
         })
 
         it('cannot fetch ticks', async () => {
-          // With production V3 pools this will revert with 'BC' but this test reverts on the mock
+          // With production V3 pools this will revert with 'ONI' but this test reverts on the mock
           // pool instead because TWAP is queried first and the mock pool requires two observations
           // for its #observe
           await expect(oracle.fetchCurrentTicks(pool.address, twapPeriod)).to.be.reverted
